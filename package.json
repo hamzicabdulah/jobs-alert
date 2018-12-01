@@ -1,0 +1,18 @@
+{
+  "name": "jobs-alert",
+  "version": "1.0.0",
+  "description": "Slack chat bot that notifies you about every new job posting that gets added on specific freelance websites and lets you apply directly via chatting with it",
+  "main": "index.js",
+  "scripts": {
+    "start": "nodemon --ignore database.json index"
+  },
+  "author": "Abdulah Hamzic <https://github.com/hamzicabdulah>",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^6.1.0",
+    "jsonfile": "^5.0.0",
+    "nightmare": "^3.0.1",
+    "slackbots": "^1.2.0"
+  },
+  "devDependencies": {}
+}
