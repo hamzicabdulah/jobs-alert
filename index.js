@@ -12,7 +12,8 @@ const bot = new SlackBot({
 bot.on('error', console.error)
 
 bot.on('start', () => {
-  setInterval(sendNewJobs, 70000);
+  sendNewJobs();
+  setInterval(sendNewJobs, 300000);
 });
 
 /**
@@ -22,22 +23,23 @@ bot.on('start', () => {
 async function sendNewJobs() {
   try {
     const guru = new Guru();
-
+    guru.startNightmare();
     await guru.login();
     if (await guru.requiresSecurityAnswer())
       await guru.answerSecurityQuestion();
 
-    const last20JobUrls = await guru.getLast20JobUrls();
-    const newJobs = await guru.getNewJobs(last20JobUrls);
+    const allJobUrls = await guru.getAllJobUrls();
+    const newJobs = await guru.getNewJobs(allJobUrls);
 
     if (newJobs.length)
       guru.updateLastJobSent(newJobs[0]);
 
-    await guru.closeNightmare();
+    await guru.endNightmare();
 
     newJobs.reverse().forEach(job => sendJob(job));
   } catch (err) {
     console.error(err);
+    await guru.closeNightmare();
     return sendNewJobs();
   }
 }

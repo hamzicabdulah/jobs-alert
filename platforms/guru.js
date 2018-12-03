@@ -7,15 +7,16 @@ require('dotenv').config({
 });
 
 const guruBaseUrl = 'https://www.guru.com';
-const databasePath = path.resolve(__dirname, '../database.json');
+const databasePath = path.resolve(__dirname, '../data/database.json');
 
 /** Class containing any code related to Guru */
 module.exports = class Guru {
+
   /**
    * Create a new instance of Nightmare
    */
-  constructor() {
-    this.nightmare = Nightmare({ show: true });
+  startNightmare() {
+    this.nightmare = Nightmare({ show: false })
   }
 
   /**
@@ -72,28 +73,47 @@ module.exports = class Guru {
 
   /**
    * Get the URLs of all the jobs on Guru's first page
+   * that are relevant to the user, i.e. belong to the 
+   * categories that the user has previously selected
    * 
-   * @returns {string[]} - Array of the URLs of the last 20 Guru jobs
+   * @returns {string[]} - Array of the URLs of the last relevant Guru jobs
    */
-  getLast20JobUrls() {
+  getAllJobUrls() {
+    const selectedCategories = this.getSelectedCategories();
+
     return this.nightmare
       .goto(`${guruBaseUrl}/d/jobs`)
       .wait('body') // Job posting
-      .evaluate(() => {
-        return [...document.querySelectorAll("h2.servTitle > a:first-child")]
-          .map(elem => elem.href);
-      });
+      .evaluate(selectedCategories => {
+        return [...document.querySelectorAll("li.serviceItem")]
+          .filter(job => {
+            const jobCategory = job.querySelector("ul.skills a:first-child").href.split("/")[6];
+            return selectedCategories.includes(jobCategory);
+          })
+          .map(job => job.querySelector("h2.servTitle > a:first-child").href);
+      }, selectedCategories);
   }
 
   /**
-   * Given the URLs of the last 20 Guru jobs,
+   * Get the href strings of the categories 
+   * that the user has selected to be notified about
+   * 
+   * @returns {string[]} - Category href strings
+   */
+  getSelectedCategories() {
+    const database = jsonfile.readFileSync(databasePath);
+    return database.guru.categories;
+  }
+
+  /**
+   * Given the URLs of all the jobs to be processed,
    * return data only for the jobs that the user hasn't yet been notified about
    * 
-   * @param {string[]} last20JobUrls - Array of the URLs of the last 20 Guru jobs
+   * @param {string[]} allJobUrls - Array of the URLs of all the jobs to be processed
    * @returns {Object[]} - Array of the data for every new job
    */
-  async getNewJobs(last20JobUrls) {
-    const newJobUrls = this.getNewJobUrls(last20JobUrls);
+  async getNewJobs(allJobUrls) {
+    const newJobUrls = this.getNewJobUrls(allJobUrls);
     const newJobs = [];
     for (let i = 0; i < newJobUrls.length; i++) {
       newJobs.push(await this.getJobDetails(newJobUrls[i]));
@@ -102,16 +122,16 @@ module.exports = class Guru {
   }
 
   /**
-   * Given the last 20 Guru job URLs, filter only the ones
-   * that the user hasn't yet been notified about
+   * Given the URLs of all the jobs to be processed,
+   * filter only the ones that the user hasn't yet been notified about
    * 
-   * @param {string[]} last20JobUrls - Array of the URLs of the last 20 Guru jobs
+   * @param {string[]} allJobUrls - Array of the URLs of all the jobs to be processed
    * @returns {string[]} - Array of the URLs of the new Guru jobs only
    */
-  getNewJobUrls(last20JobUrls) {
+  getNewJobUrls(allJobUrls) {
     const lastJobSent = this.getLastJobSent();
     const newJobUrls = [];
-    last20JobUrls.every(jobLink => {
+    allJobUrls.every(jobLink => {
       if (!jobLink.includes(lastJobSent)) {
         newJobUrls.push(jobLink);
         return true;
@@ -181,7 +201,21 @@ module.exports = class Guru {
   /**
    * Destroy the previously created Nightmare instance
    */
-  closeNightmare() {
+  endNightmare() {
     return this.nightmare.end();
+  }
+
+  /**
+   * Update the selected categories in database.json with the given ones
+   * The user will only get notified for jobs from the selected categories
+   * 
+   * @param {string[]} categories - New categories to select
+   */
+  selectCategories(categories) {
+    const database = jsonfile.readFileSync(databasePath);
+    database.guru.categories = categories;
+    jsonfile.writeFile(databasePath, database, err => {
+      if (err) console.error(err)
+    });
   }
 }
