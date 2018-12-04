@@ -9,6 +9,7 @@ const urlencodedParser = bodyParser.urlencoded({ extended: false })
 
 
 const guruRouter = express.Router();
+
 guruRouter.post('/categories', urlencodedParser, (req, res) => {
   if (req.body.token !== process.env.SLACK_VERIFICATION_TOKEN)
     return res.status(403).end('Access forbidden');
@@ -18,18 +19,27 @@ guruRouter.post('/categories', urlencodedParser, (req, res) => {
 });
 
 app.use('/guru', guruRouter);
+
 app.post('/action', urlencodedParser, (req, res) => {
   const payload = JSON.parse(req.body.payload);
   if (payload.token !== process.env.SLACK_VERIFICATION_TOKEN)
     return res.status(403).end('Access forbidden');
   res.status(200).end();
 
-  if (payload.callback_id === 'category')
-    slackBot.updateGuruCategories(
-      payload.channel.id,
-      payload.original_message.ts,
-      payload.actions[0].value
-    );
+  switch (payload.callback_id) {
+    case 'guru_category':
+      slackBot.updateGuruCategories(
+        payload.channel.id,
+        payload.original_message.ts,
+        payload.actions[0].value
+      );
+      break;
+
+    case 'guru_job':
+      if (payload.actions[0].name === 'apply')
+        slackBot.guruApply(payload.actions[0].value);
+      break;
+  };
 });
 
 const port = process.env.PORT || 3000;

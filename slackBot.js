@@ -19,13 +19,13 @@ module.exports = class SlackBot {
   startSlackBot() {
     this.bot = new SlackBotAPI({
       token: process.env.SLACK_TOKEN,
-      name: 'jobs-alert'
+      name: 'jobsalert'
     });
 
     this.bot.on('error', console.error);
     this.bot.on('start', () => {
       this.sendNewGuruJobs();
-      setInterval(this.sendNewGuruJobs, 300000);
+      setInterval(() => this.sendNewGuruJobs(), 300000);
     });
   }
 
@@ -34,8 +34,8 @@ module.exports = class SlackBot {
    * And send a message on Slack for each one of those jobs
    */
   async sendNewGuruJobs() {
+    const guru = new Guru();
     try {
-      const guru = new Guru();
       guru.startNightmare();
       await guru.login();
       if (await guru.requiresSecurityAnswer())
@@ -88,12 +88,13 @@ module.exports = class SlackBot {
                 `- Paid Jobs: ${jobDetails.employer.paidJobs}`
             }
           ],
+          callback_id: 'guru_job',
           actions: [
             {
               name: 'apply',
               text: 'Apply',
               type: 'button',
-              value: 'apply'
+              value: jobDetails.url
             },
             {
               type: 'button',
@@ -137,7 +138,7 @@ module.exports = class SlackBot {
         return {
           title: '',
           color: '#fff',
-          callback_id: 'category',
+          callback_id: 'guru_category',
           actions: [
             {
               name: category.name,
@@ -172,5 +173,14 @@ module.exports = class SlackBot {
 
     const params = this.getGuruCategoriesMessageParams(allCategories, updatedCategories);
     this.bot.updateMessage(channelId, messageTimestamp, '', params);
+  }
+
+  /**
+   * Interact with the user and apply to a Guru job
+   * 
+   * @param {string} jobUrl - The URL of the job to apply to
+   */
+  guruApply(jobUrl) {
+
   }
 }
