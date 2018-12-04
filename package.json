@@ -9,7 +9,9 @@
   "author": "Abdulah Hamzic <https://github.com/hamzicabdulah>",
   "license": "ISC",
   "dependencies": {
+    "body-parser": "^1.18.3",
     "dotenv": "^6.1.0",
+    "express": "^4.16.4",
     "jsonfile": "^5.0.0",
     "nightmare": "^3.0.1",
     "slackbots": "^1.2.0"

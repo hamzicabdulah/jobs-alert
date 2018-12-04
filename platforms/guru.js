@@ -85,12 +85,12 @@ module.exports = class Guru {
       .goto(`${guruBaseUrl}/d/jobs`)
       .wait('body') // Job posting
       .evaluate(selectedCategories => {
-        return [...document.querySelectorAll("li.serviceItem")]
+        return [...document.querySelectorAll('li.serviceItem')]
           .filter(job => {
-            const jobCategory = job.querySelector("ul.skills a:first-child").href.split("/")[6];
+            const jobCategory = job.querySelector('ul.skills a:first-child').href.split('/')[6];
             return selectedCategories.includes(jobCategory);
           })
-          .map(job => job.querySelector("h2.servTitle > a:first-child").href);
+          .map(job => job.querySelector('h2.servTitle > a:first-child').href);
       }, selectedCategories);
   }
 
@@ -102,7 +102,7 @@ module.exports = class Guru {
    */
   getSelectedCategories() {
     const database = jsonfile.readFileSync(databasePath);
-    return database.guru.categories;
+    return database.guru.selectedCategories;
   }
 
   /**
@@ -206,6 +206,16 @@ module.exports = class Guru {
   }
 
   /**
+   * Get the href strings of all possible Guru categories
+   * 
+   * @returns {string[]} - Category href strings
+   */
+  getAllCategories() {
+    const database = jsonfile.readFileSync(databasePath);
+    return database.guru.categories;
+  }
+
+  /**
    * Update the selected categories in database.json with the given ones
    * The user will only get notified for jobs from the selected categories
    * 
@@ -213,7 +223,7 @@ module.exports = class Guru {
    */
   selectCategories(categories) {
     const database = jsonfile.readFileSync(databasePath);
-    database.guru.categories = categories;
+    database.guru.selectedCategories = categories;
     jsonfile.writeFile(databasePath, database, err => {
       if (err) console.error(err)
     });

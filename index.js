@@ -1,96 +1,39 @@
 /** Imports */
-const SlackBot = require('slackbots');
-require('dotenv').config({});
-const Guru = require('./platforms/guru.js');
+const express = require('express');
+const bodyParser = require('body-parser');
+const SlackBot = require('./slackBot');
 
-/** Slack bot */
-const bot = new SlackBot({
-  token: process.env.BOT_TOKEN,
-  name: 'jobs-alert'
+const app = express();
+const slackBot = new SlackBot();
+const urlencodedParser = bodyParser.urlencoded({ extended: false })
+
+
+const guruRouter = express.Router();
+guruRouter.post('/categories', urlencodedParser, (req, res) => {
+  if (req.body.token !== process.env.SLACK_VERIFICATION_TOKEN)
+    return res.status(403).end('Access forbidden');
+
+  res.status(200).end();
+  slackBot.sendGuruCategories();
 });
 
-bot.on('error', console.error)
+app.use('/guru', guruRouter);
+app.post('/action', urlencodedParser, (req, res) => {
+  const payload = JSON.parse(req.body.payload);
+  if (payload.token !== process.env.SLACK_VERIFICATION_TOKEN)
+    return res.status(403).end('Access forbidden');
+  res.status(200).end();
 
-bot.on('start', () => {
-  sendNewJobs();
-  setInterval(sendNewJobs, 300000);
+  if (payload.callback_id === 'category')
+    slackBot.updateGuruCategories(
+      payload.channel.id,
+      payload.original_message.ts,
+      payload.actions[0].value
+    );
 });
 
-/**
- * Get data about every new job posted on Guru
- * And send a message on Slack for each one of those jobs
- */
-async function sendNewJobs() {
-  try {
-    const guru = new Guru();
-    guru.startNightmare();
-    await guru.login();
-    if (await guru.requiresSecurityAnswer())
-      await guru.answerSecurityQuestion();
-
-    const allJobUrls = await guru.getAllJobUrls();
-    const newJobs = await guru.getNewJobs(allJobUrls);
-
-    if (newJobs.length)
-      guru.updateLastJobSent(newJobs[0]);
-
-    await guru.endNightmare();
-
-    newJobs.reverse().forEach(job => sendJob(job));
-  } catch (err) {
-    console.error(err);
-    await guru.closeNightmare();
-    return sendNewJobs();
-  }
-}
-
-/**
- * Send a formatted message on Slack with the given jobDetails
- * 
- * @param {Object} jobDetails - All the job data
- */
-function sendJob(jobDetails) {
-  const params = {
-    icon_url: 'https://goo.gl/ewa9YG',
-    username: 'Guru',
-    attachments: [
-      {
-        fallback: jobDetails.title,
-        color: '#36a64f',
-        title: jobDetails.title.toUpperCase(),
-        title_link: jobDetails.url,
-        fields: [
-          {
-            title: 'Description',
-            value: jobDetails.description
-          },
-          {
-            title: 'Budget',
-            value: `- Type: ${jobDetails.budget.type}\n- Amount: ${jobDetails.budget.amount}`
-          },
-          {
-            title: 'Employer',
-            value: `- Name: ${jobDetails.employer.name}\n- Country: ${jobDetails.employer.country}\n` +
-              `- Feedback: ${jobDetails.employer.feedback}\n- Paid: ${jobDetails.employer.paid}\n` +
-              `- Paid Jobs: ${jobDetails.employer.paidJobs}`
-          }
-        ],
-        actions: [
-          {
-            name: 'apply',
-            text: 'Apply',
-            type: 'button',
-            value: 'apply'
-          },
-          {
-            type: 'button',
-            text: 'Open In Browser',
-            url: jobDetails.url
-          }
-        ]
-      }
-    ]
-  };
-
-  bot.postMessageToChannel('jobs-alert', '', params);
-}
+const port = process.env.PORT || 3000;
+app.listen(port, err => {
+  if (err) throw err;
+  console.log(`Listening on port ${port}`);
+});
