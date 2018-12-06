@@ -40,9 +40,9 @@ module.exports = class SlackBot {
     const guru = new Guru();
     try {
       guru.startNightmare();
-      await guru.login(1);
+      await guru.login();
       if (await guru.requiresSecurityAnswer())
-        await guru.answerSecurityQuestion(1);
+        await guru.answerSecurityQuestion();
 
       const allJobUrls = await guru.getAllJobUrls();
       const newJobs = await guru.getNewJobs(allJobUrls);
@@ -93,12 +93,12 @@ module.exports = class SlackBot {
           ],
           callback_id: 'guru_job',
           actions: [
-            {
+            /* {
               name: 'apply',
               text: 'Apply',
               type: 'button',
               value: jobDetails.url
-            },
+            }, */
             {
               type: 'button',
               text: 'Open In Browser',
@@ -202,7 +202,7 @@ module.exports = class SlackBot {
    * @param {string} jobUrl - The URL of the job to apply to
    * @param {string} triggerId - Required for the API request
    */
-  guruApply(jobUrl, triggerId) {
+  /* guruApply(jobUrl, triggerId) {
     const requestBody = {
       trigger_id: triggerId,
       dialog: {
@@ -233,7 +233,7 @@ module.exports = class SlackBot {
 
     this.apiRequest('/dialog.open', requestBody)
       .catch(console.error);
-  }
+  } */
 
   /**
    * 

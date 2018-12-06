@@ -18,24 +18,21 @@ module.exports = class Guru {
    * Create a new instance of Nightmare
    */
   startNightmare() {
-    this.nightmare = Nightmare({ show: true })
+    this.nightmare = Nightmare({ show: false })
   }
 
   /**
    * Log in to Guru 
-   * Test account (1) is used for fetching data, main account (2) is used for applying to jobs
-   * 
-   * @param {number} accountNumber - Could be either 1 (for test account) or 2 (for main account)
    */
-  login(accountNumber) {
+  login() {
     const usernameInput = 'input#ctl00_ContentPlaceHolder1_ucLogin_txtUserName_txtUserName_TextBox';
     const passwordInput = 'input#ctl00_ContentPlaceHolder1_ucLogin_txtPassword_txtPassword_TextBox';
     const signInButton = 'input#ctl00_ContentPlaceHolder1_btnLoginAccount_btnLoginAccount_Button';
 
     return this.nightmare.goto(`${guruBaseUrl}/login.aspx`)
       .wait('body')
-      .insert(usernameInput, process.env[`GURU_USERNAME_${accountNumber}`])
-      .insert(passwordInput, process.env[`GURU_PASSWORD_${accountNumber}`])
+      .insert(usernameInput, process.env.GURU_USERNAME)
+      .insert(passwordInput, process.env.GURU_PASSWORD)
       .click(signInButton);
   }
 
@@ -53,12 +50,9 @@ module.exports = class Guru {
 
   /**
    * Try every security answer until correct
-   * Test account (1) is used for fetching data, main account (2) is used for applying to jobs
-   * 
-   * @param {number} accountNumber - Could be either 1 (for test account) or 2 (for main account)
    */
-  async answerSecurityQuestion(accountNumber) {
-    const possibleSecurityAnswers = process.env[`GURU_SECURITY_ANSWERS_${accountNumber}`].split(',');
+  async answerSecurityQuestion() {
+    const possibleSecurityAnswers = process.env.GURU_SECURITY_ANSWERS.split(',');
 
     for (let i = 0; i < possibleSecurityAnswers.length; i++) {
       await this.trySecurityAnswer(possibleSecurityAnswers[i]);
@@ -309,5 +303,27 @@ module.exports = class Guru {
         resolve(document);
       });
     });
+  }
+
+  /**
+   * Fetch application options such as billing type, input fields etc.
+   */
+  async getApplicationOptions() {
+    const jobUrls = await this.getAllJobUrls();
+
+    return this.nightmare.goto(`${jobUrls[0]}`)
+      .wait('body')
+      .click('a#ctl00_guB_btnSubmit')
+      .wait('div.createProposal')
+      .evaluate(() => {
+        return {
+          billingMethods: [...document.querySelectorAll('div.cpsection:first-child select option')].map(option => {
+            return {
+              name: option.innerText,
+              value: option.getAttribute('translate')
+            };
+          })
+        }
+      });
   }
 }
