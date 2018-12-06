@@ -1,13 +1,15 @@
 /** Imports */
 const path = require('path');
 const Nightmare = require('nightmare');
-const jsonfile = require('jsonfile');
 require('dotenv').config({
   path: path.resolve(__dirname, '../.env')
 });
+const LastJobProcessed = require('../models/lastJobProcessed');
+const Category = require('../models/category');
 
+/** Constants */
 const guruBaseUrl = 'https://www.guru.com';
-const databasePath = path.resolve(__dirname, '../data/database.json');
+const guruDatabaseQuery = { platform: 'Guru' }
 
 /** Class containing any code related to Guru */
 module.exports = class Guru {
@@ -78,31 +80,36 @@ module.exports = class Guru {
    * 
    * @returns {string[]} - Array of the URLs of the last relevant Guru jobs
    */
-  getAllJobUrls() {
-    const selectedCategories = this.getSelectedCategories();
+  async getAllJobUrls() {
+    const categories = await this.getCategories();
 
     return this.nightmare
       .goto(`${guruBaseUrl}/d/jobs`)
       .wait('body') // Job posting
-      .evaluate(selectedCategories => {
+      .evaluate(categories => {
         return [...document.querySelectorAll('li.serviceItem')]
           .filter(job => {
             const jobCategory = job.querySelector('ul.skills a:first-child').href.split('/')[6];
-            return selectedCategories.includes(jobCategory);
+            return categories.find(category => category.href === jobCategory && category.selected);
           })
           .map(job => job.querySelector('h2.servTitle > a:first-child').href);
-      }, selectedCategories);
+      }, categories);
   }
 
   /**
-   * Get the href strings of the categories 
-   * that the user has selected to be notified about
+   * Get all Guru categories saved in the Mongo database
    * 
-   * @returns {string[]} - Category href strings
+   * @returns {Object[]} - All Guru categories with their name, href, platform and selected properties
    */
-  getSelectedCategories() {
-    const database = jsonfile.readFileSync(databasePath);
-    return database.guru.selectedCategories;
+  getCategories() {
+    return new Promise((resolve, reject) => {
+      Category.find(guruDatabaseQuery,
+        (err, categories) => {
+          if (err) return reject(err);
+          if (!categories || !categories.length) return reject('No Guru categories available.');
+          resolve(categories);
+        });
+    });
   }
 
   /**
@@ -113,7 +120,7 @@ module.exports = class Guru {
    * @returns {Object[]} - Array of the data for every new job
    */
   async getNewJobs(allJobUrls) {
-    const newJobUrls = this.getNewJobUrls(allJobUrls);
+    const newJobUrls = await this.getNewJobUrls(allJobUrls);
     const newJobs = [];
     for (let i = 0; i < newJobUrls.length; i++) {
       newJobs.push(await this.getJobDetails(newJobUrls[i]));
@@ -128,11 +135,11 @@ module.exports = class Guru {
    * @param {string[]} allJobUrls - Array of the URLs of all the jobs to be processed
    * @returns {string[]} - Array of the URLs of the new Guru jobs only
    */
-  getNewJobUrls(allJobUrls) {
-    const lastJobSent = this.getLastJobSent();
+  async getNewJobUrls(allJobUrls) {
+    const lastJobProcessed = await this.getLastJobProcessed();
     const newJobUrls = [];
     allJobUrls.every(jobLink => {
-      if (!jobLink.includes(lastJobSent)) {
+      if (!lastJobProcessed || !jobLink.includes(lastJobProcessed)) {
         newJobUrls.push(jobLink);
         return true;
       }
@@ -145,9 +152,14 @@ module.exports = class Guru {
    * 
    * @returns {string} - Id of the last job that the user has been notified about
    */
-  getLastJobSent() {
-    const database = jsonfile.readFileSync(databasePath);
-    return database.guru.lastJobSent;
+  getLastJobProcessed() {
+    return new Promise((resolve, reject) => {
+      LastJobProcessed.findOne(guruDatabaseQuery, (err, lastJobProcessed) => {
+        if (err) return reject(err);
+        if (!lastJobProcessed) return resolve('');
+        resolve(lastJobProcessed.jobId);
+      });
+    });
   }
 
   /**
@@ -155,12 +167,21 @@ module.exports = class Guru {
    * set its id as the value for lastJobSent in database.json
    * 
    * @param {Object} lastJob - Data for the last job posted on Guru
+   * @returns {Object} - Updated LastJobProcessed
    */
-  updateLastJobSent(lastJob) {
-    const database = jsonfile.readFileSync(databasePath);
-    database.guru.lastJobSent = lastJob.id;
-    jsonfile.writeFile(databasePath, database, err => {
-      if (err) console.error(err)
+  updateLastJobProcessed(lastJob) {
+    return new Promise((resolve, reject) => {
+      LastJobProcessed.updateOne(guruDatabaseQuery, {
+        ...guruDatabaseQuery,
+        jobId: lastJob.id
+      }, {
+          upsert: true,
+          setDefaultsOnInsert: true
+        }, (err, lastJobProcessed) => {
+          if (err) return reject(err);
+          resolve(lastJobProcessed);
+        }
+      );
     });
   }
 
@@ -206,26 +227,81 @@ module.exports = class Guru {
   }
 
   /**
-   * Get the href strings of all possible Guru categories
+   * Update the selected property of the category with the given categoryName
+   * The user will only get notified for jobs from the selected categories
    * 
-   * @returns {string[]} - Category href strings
+   * @param {string} categoryName - The name of the category to select/unselect
    */
-  getAllCategories() {
-    const database = jsonfile.readFileSync(databasePath);
-    return database.guru.categories;
+  flipCategorySelection(categoryName) {
+    return new Promise((resolve, reject) => {
+      Category.findOne({
+        ...guruDatabaseQuery,
+        href: categoryName
+      }, (err, category) => {
+        if (err) return reject(err);
+        if (!category) return reject();
+        category.selected = !category.selected;
+        category.save(err => {
+          if (err) return reject(err);
+          resolve(category);
+        });
+      });
+    });
   }
 
   /**
-   * Update the selected categories in database.json with the given ones
-   * The user will only get notified for jobs from the selected categories
+   * Get all categories directly parsed from Guru
    * 
-   * @param {string[]} categories - New categories to select
+   * @returns {Object[]} - Array of categories with their names and hrefs
    */
-  selectCategories(categories) {
-    const database = jsonfile.readFileSync(databasePath);
-    database.guru.selectedCategories = categories;
-    jsonfile.writeFile(databasePath, database, err => {
-      if (err) console.error(err)
+  fetchCategoriesFromGuru() {
+    return this.nightmare.goto(`${guruBaseUrl}/d/jobs/`)
+      .wait('body')
+      .evaluate(() => {
+        return [...document.querySelectorAll('ul#ctl00_guB_category a')].map(category => {
+          return {
+            name: category.innerText.split(' (')[0],
+            href: category.href.split('/')[6]
+          };
+        });
+      });
+  }
+
+  /**
+   * Update the categories in the database
+   * 
+   * @param {Object[]} categories - Array of categories with their names and hrefs
+   */
+  updateCategories(categories) {
+    Category.find(guruDatabaseQuery, (_err, existingCategories) => {
+      Category.deleteMany(guruDatabaseQuery, async _err => {
+        for (let i = 0; i < categories.length; i++) {
+          const category = categories[i];
+          const existingCategory = existingCategories.find(existingCategory => {
+            return category.name === existingCategory.name;
+          });
+          if (existingCategory) category.selected = existingCategory.selected;
+          await this.addCategory(category);
+        }
+      });
+    });
+  }
+
+  /**
+   * Add a new Guru category to the database
+   * 
+   * @param {Object} category - Guru category with its name and href (and maybe selected property)
+   */
+  addCategory(category) {
+    return new Promise((resolve, reject) => {
+      const newCategory = new Category({
+        ...category,
+        ...guruDatabaseQuery
+      });
+      newCategory.save((err, document) => {
+        if (err) return reject(err);
+        resolve(document);
+      });
     });
   }
 }

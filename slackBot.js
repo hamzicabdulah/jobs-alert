@@ -1,7 +1,10 @@
 /** Imports */
 const SlackBotAPI = require('slackbots');
 require('dotenv').config({});
+const request = require('request-promise');
 const Guru = require('./platforms/guru.js');
+
+const guruIconUrl = 'https://goo.gl/ewa9YG';
 
 
 /** jobsalert Slack bot */
@@ -45,14 +48,14 @@ module.exports = class SlackBot {
       const newJobs = await guru.getNewJobs(allJobUrls);
 
       if (newJobs.length)
-        guru.updateLastJobSent(newJobs[0]);
+        await guru.updateLastJobProcessed(newJobs[0]);
 
       await guru.endNightmare();
 
       newJobs.reverse().forEach(job => this.sendGuruJob(job));
     } catch (err) {
       console.error(err);
-      await guru.closeNightmare();
+      await guru.endNightmare();
       return this.sendNewGuruJobs();
     }
   }
@@ -64,7 +67,7 @@ module.exports = class SlackBot {
    */
   sendGuruJob(jobDetails) {
     const params = {
-      icon_url: 'https://goo.gl/ewa9YG',
+      icon_url: guruIconUrl,
       username: 'Guru',
       attachments: [
         {
@@ -113,28 +116,31 @@ module.exports = class SlackBot {
    * Send a message on Slack with the categories the user has previously selected
    * Allow the user to select/unselect categories via pressing buttons
    */
-  sendGuruCategories() {
-    const guru = new Guru();
-    const allCategories = guru.getAllCategories();
-    const selectedCategories = guru.getSelectedCategories();
-    const params = this.getGuruCategoriesMessageParams(allCategories, selectedCategories);
-    this.bot.postMessageToChannel(process.env.SLACK_CHANNEL_NAME, '', params);
+  async sendGuruCategories() {
+    try {
+      const guru = new Guru();
+      const categories = await guru.getCategories();
+      const params = this.getGuruCategoriesMessageParams(categories);
+      this.bot.postMessageToChannel(process.env.SLACK_CHANNEL_NAME, '', params);
+    } catch (err) {
+      console.error(err);
+      this.sendErrorMessage();
+    }
   }
 
   /**
-   * Return formatted Slack message params for the database.json categories
+   * Return formatted Slack message params for the database categories
    * This function is used by sendGuruCategories() and updateGuruCategories()
    * 
-   * @param {Object[]} - All Guru categories with name and href properties
-   * @param {string[]} - Selected Guru categories (href strings only)
+   * @param {Object[]} categories - All Guru categories with name, platform, href and selected properties
    * @returns {Object} - Formatted Slack message params
    */
-  getGuruCategoriesMessageParams(allCategories, selectedCategories) {
+  getGuruCategoriesMessageParams(categories) {
     return {
-      icon_url: 'https://goo.gl/ewa9YG',
+      icon_url: guruIconUrl,
       username: 'Guru',
       text: 'Click on a category to select/unselect it.',
-      attachments: allCategories.map(category => {
+      attachments: categories.map(category => {
         return {
           title: '',
           color: '#fff',
@@ -142,7 +148,7 @@ module.exports = class SlackBot {
           actions: [
             {
               name: category.name,
-              text: `${category.name} ${selectedCategories.includes(category.href) ? '✔' : ''}`,
+              text: `${category.name} ${category.selected ? '✔' : ''}`,
               type: 'button',
               value: category.href
             }
@@ -153,34 +159,100 @@ module.exports = class SlackBot {
   }
 
   /**
-   * Select/unselect the categoryClicked in database.json
+   * Select/unselect the categoryClicked in the database
    * Then edit the message with the given timestamp with the updated categories
    * 
    * @param {string} channelId - The id of the channel the original message was sent in by sendGuruCategories()
    * @param {string} messageTimestamp - The timestamp of the original message
-   * @param {string} categoryToUpdate - The category to select/unselect in database.json
+   * @param {string} categoryToUpdate - The category to select/unselect in the database
    */
-  updateGuruCategories(channelId, messageTimestamp, categoryToUpdate) {
-    const guru = new Guru();
-    const allCategories = guru.getAllCategories();
-    const selectedCategories = guru.getSelectedCategories();
+  async flipGuruCategorySelection(channelId, messageTimestamp, categoryToUpdate) {
+    try {
+      const guru = new Guru();
+      await guru.flipCategorySelection(categoryToUpdate);
+      const categories = await guru.getCategories();
 
-    const updatedCategories = selectedCategories.includes(categoryToUpdate) ?
-      selectedCategories.filter(category => category !== categoryToUpdate) :
-      [...selectedCategories, categoryToUpdate];
+      const params = this.getGuruCategoriesMessageParams(categories);
+      this.bot.updateMessage(channelId, messageTimestamp, '', params);
+    } catch (err) {
+      console.error(err);
+      this.sendErrorMessage();
+    }
+  }
 
-    guru.selectCategories(updatedCategories);
+  /**
+   * Notify the Slack user(s) that something went wrong
+   */
+  sendErrorMessage() {
+    const params = {
+      icon_url: guruIconUrl,
+      username: 'Guru'
+    };
 
-    const params = this.getGuruCategoriesMessageParams(allCategories, updatedCategories);
-    this.bot.updateMessage(channelId, messageTimestamp, '', params);
+    this.bot.postMessageToChannel(
+      process.env.SLACK_CHANNEL_NAME,
+      'Oops. Sorry, I got confused. That didn\'t work.',
+      params
+    );
   }
 
   /**
    * Interact with the user and apply to a Guru job
    * 
    * @param {string} jobUrl - The URL of the job to apply to
+   * @param {string} triggerId - Required for the API request
    */
-  guruApply(jobUrl) {
+  guruApply(jobUrl, triggerId) {
+    const requestBody = {
+      trigger_id: triggerId,
+      dialog: {
+        callback_id: 'guru_apply',
+        title: 'Apply',
+        submit_label: 'Apply',
+        notify_on_cancel: true,
+        state: 'Limo',
+        elements: [
+          {
+            label: 'Billing based on',
+            type: 'select',
+            name: 'billing',
+            options: [
+              {
+                label: 'Hourly by Time Tracked',
+                value: 'QUOTES.SUBMIT.lblHourly'
+              },
+              {
+                label: 'Fixed Price by Milestone',
+                value: 'QUOTES.SUBMIT.lblFixedPrice'
+              }
+            ]
+          }
+        ]
+      }
+    };
 
+    this.apiRequest('/dialog.open', requestBody)
+      .catch(console.error);
+  }
+
+  /**
+   * 
+   * @param {string} route - The Slack API route to send a request to (e.g. '/dialog.open')
+   * @param {Object} requestBody - The request body to send with the HTTP request
+   * @returns {Object} - The response received from Slack's API
+   */
+  apiRequest(route, requestBody) {
+    const options = {
+      method: 'POST',
+      uri: `https://slack.com/api${route}`,
+      body: requestBody,
+      json: true,
+      headers: {
+        'Content-type': 'application/json',
+        Authorization: `Bearer ${process.env.SLACK_TOKEN}`
+      }
+    };
+
+    return request(options);
   }
 }
