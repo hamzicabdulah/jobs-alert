@@ -40,9 +40,9 @@ module.exports = class SlackBot {
     const guru = new Guru();
     try {
       guru.startNightmare();
-      await guru.login();
+      await guru.login(1);
       if (await guru.requiresSecurityAnswer())
-        await guru.answerSecurityQuestion();
+        await guru.answerSecurityQuestion(1);
 
       const allJobUrls = await guru.getAllJobUrls();
       const newJobs = await guru.getNewJobs(allJobUrls);
