@@ -27,6 +27,7 @@ module.exports = class SlackBot {
 
     this.bot.on('error', console.error);
     this.bot.on('start', () => {
+      console.log('Started Slack Bot.');
       this.sendNewGuruJobs();
       setInterval(() => this.sendNewGuruJobs(), 300000);
     });
@@ -47,14 +48,17 @@ module.exports = class SlackBot {
       const allJobUrls = await guru.getAllJobUrls();
       const newJobs = await guru.getNewJobs(allJobUrls);
 
-      if (newJobs.length)
-        await guru.updateLastJobProcessed(newJobs[0]);
-
       await guru.endNightmare();
 
-      newJobs.reverse().forEach(job => this.sendGuruJob(job));
+      if (newJobs.length) {
+        await guru.updateLastJobProcessed(newJobs[0]);
+
+        console.log('Sending new Guru jobs.');
+        newJobs.reverse().forEach(job => this.sendGuruJob(job));
+        console.log('Successfully sent new Guru jobs.');
+      }
     } catch (err) {
-      console.error(err);
+      console.error(`Something went wrong while sending new Guru jobs. Error received: ${err}`);
       await guru.endNightmare();
       return this.sendNewGuruJobs();
     }
@@ -96,12 +100,6 @@ module.exports = class SlackBot {
           ],
           callback_id: 'guru_job',
           actions: [
-            /* {
-              name: 'apply',
-              text: 'Apply',
-              type: 'button',
-              value: jobDetails.url
-            }, */
             {
               type: 'button',
               text: 'Open In Browser',
@@ -120,13 +118,16 @@ module.exports = class SlackBot {
    * Allow the user to select/unselect categories via pressing buttons
    */
   async sendGuruCategories() {
+    console.log('Sending Guru categories.');
+
     try {
       const guru = new Guru();
       const categories = await guru.getCategories();
       const params = this.getGuruCategoriesMessageParams(categories);
       this.bot.postMessageToChannel(process.env.SLACK_CHANNEL_NAME, '', params);
+      console.log('Successfully sent Guru categories.');
     } catch (err) {
-      console.error(err);
+      console.error(`Something went wrong while trying to send Guru categories. Error received: ${err}`);
       this.sendErrorMessage();
     }
   }

@@ -19,12 +19,15 @@ module.exports = class Guru {
    */
   startNightmare() {
     this.nightmare = Nightmare({ show: false })
+    console.log('Started Nightmare.');
   }
 
   /**
    * Log in to Guru 
    */
   login() {
+    console.log('Logging in to Guru.');
+
     const usernameInput = 'input#ctl00_ContentPlaceHolder1_ucLogin_txtUserName_txtUserName_TextBox';
     const passwordInput = 'input#ctl00_ContentPlaceHolder1_ucLogin_txtPassword_txtPassword_TextBox';
     const signInButton = 'input#ctl00_ContentPlaceHolder1_btnLoginAccount_btnLoginAccount_Button';
@@ -33,7 +36,8 @@ module.exports = class Guru {
       .wait('body')
       .insert(usernameInput, process.env.GURU_USERNAME)
       .insert(passwordInput, process.env.GURU_PASSWORD)
-      .click(signInButton);
+      .click(signInButton)
+      .then(() => console.log('Successfully logged in to Guru.'));
   }
 
   /**
@@ -52,11 +56,14 @@ module.exports = class Guru {
    * Try every security answer until correct
    */
   async answerSecurityQuestion() {
+    console.log('Answering Guru security question.');
+
     const possibleSecurityAnswers = process.env.GURU_SECURITY_ANSWERS.split(',');
 
     for (let i = 0; i < possibleSecurityAnswers.length; i++) {
       await this.trySecurityAnswer(possibleSecurityAnswers[i]);
-      if (!await this.requiresSecurityAnswer()) return;
+      if (!await this.requiresSecurityAnswer())
+        return console.log('Successfully answered Guru security question.');
     }
   }
 
@@ -81,6 +88,8 @@ module.exports = class Guru {
    * @returns {string[]} - Array of the URLs of the last relevant Guru jobs
    */
   async getAllJobUrls() {
+    console.log('Getting Guru job URLs.');
+
     const categories = await this.getCategories();
 
     return this.nightmare
@@ -93,7 +102,11 @@ module.exports = class Guru {
             return categories.find(category => category.href === jobCategory && category.selected);
           })
           .map(job => job.querySelector('h2.servTitle > a:first-child').href);
-      }, categories);
+      }, categories)
+      .then(allJobUrls => {
+        console.log('Successfully fetched relevant Guru job URLs.');
+        return allJobUrls;
+      });
   }
 
   /**
@@ -120,11 +133,18 @@ module.exports = class Guru {
    * @returns {Object[]} - Array of the data for every new job
    */
   async getNewJobs(allJobUrls) {
+    console.log('Getting data for new Guru jobs.');
+
     const newJobUrls = await this.getNewJobUrls(allJobUrls);
     const newJobs = [];
     for (let i = 0; i < newJobUrls.length; i++) {
       newJobs.push(await this.getJobDetails(newJobUrls[i]));
     }
+
+
+    console.log(newJobs.length ?
+      'Successfully fetched data for all new Guru jobs.' :
+      'No new Guru jobs.');
     return newJobs;
   }
 
@@ -228,6 +248,7 @@ module.exports = class Guru {
    * Destroy the previously created Nightmare instance
    */
   endNightmare() {
+    console.log('Closed Nightmare');
     return this.nightmare.end();
   }
 
@@ -248,6 +269,7 @@ module.exports = class Guru {
         category.selected = !category.selected;
         category.save(err => {
           if (err) return reject(err);
+          console.log(`Successfully (un)selected Guru category: ${categoryName}`);
           resolve(category);
         });
       });
@@ -260,6 +282,8 @@ module.exports = class Guru {
    * @returns {Object[]} - Array of categories with their names and hrefs
    */
   fetchCategoriesFromGuru() {
+    console.log('Fetching categories from Guru.');
+
     return this.nightmare.goto(`${guruBaseUrl}/d/jobs/`)
       .wait('body')
       .evaluate(() => {
@@ -269,6 +293,10 @@ module.exports = class Guru {
             href: category.href.split('/')[6]
           };
         });
+      })
+      .then(categories => {
+        console.log('Successfully fetched categories from Guru.');
+        return categories;
       });
   }
 
@@ -278,6 +306,8 @@ module.exports = class Guru {
    * @param {Object[]} categories - Array of categories with their names and hrefs
    */
   updateCategories(categories) {
+    console.log('Updating Guru categories in database.');
+
     Category.find(guruDatabaseQuery, (_err, existingCategories) => {
       Category.deleteMany(guruDatabaseQuery, async _err => {
         for (let i = 0; i < categories.length; i++) {
@@ -288,6 +318,8 @@ module.exports = class Guru {
           if (existingCategory) category.selected = existingCategory.selected;
           await this.addCategory(category);
         }
+
+        console.log('Successfully updated Guru categories in database.');
       });
     });
   }
@@ -298,6 +330,8 @@ module.exports = class Guru {
    * @param {Object} category - Guru category with its name and href (and maybe selected property)
    */
   addCategory(category) {
+    console.log(`Adding a new Guru category to database: ${category.name}`);
+
     return new Promise((resolve, reject) => {
       const newCategory = new Category({
         ...category,
@@ -305,30 +339,9 @@ module.exports = class Guru {
       });
       newCategory.save((err, document) => {
         if (err) return reject(err);
+        console.log('Category successfully added.');
         resolve(document);
       });
     });
-  }
-
-  /**
-   * Fetch application options such as billing type, input fields etc.
-   */
-  async getApplicationOptions() {
-    const jobUrls = await this.getAllJobUrls();
-
-    return this.nightmare.goto(`${jobUrls[0]}`)
-      .wait('body')
-      .click('a#ctl00_guB_btnSubmit')
-      .wait('div.createProposal')
-      .evaluate(() => {
-        return {
-          billingMethods: [...document.querySelectorAll('div.cpsection:first-child select option')].map(option => {
-            return {
-              name: option.innerText,
-              value: option.getAttribute('translate')
-            };
-          })
-        }
-      });
   }
 }
