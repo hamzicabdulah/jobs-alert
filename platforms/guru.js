@@ -200,10 +200,15 @@ module.exports = class Guru {
           url: jobUrl,
           title: document.querySelector('h1#ctl00_guB_hTitleAndAddtoWatchSec').innerText,
           description: document.querySelector('.section_desc.jobDetail-section').innerText,
-          budget: {
-            type: document.querySelector('div.budget > ul > li:first-child').innerText,
-            amount: document.querySelector('div.budget > ul > li:nth-child(2)').innerText
-          },
+          budget: document.querySelectorAll('div.budget > ul > li').length > 2 ? {
+            type: 'Hourly Pay',
+            daysNum: document.querySelector('div.budget > ul > li:first-child').innerText,
+            hoursNum: document.querySelector('div.budget > ul > li:nth-child(2)').innerText,
+            rate: document.querySelector('div.budget > ul > li:nth-child(3)').innerText.slice(6)
+          } : {
+              type: document.querySelector('div.budget > ul > li:first-child').innerText,
+              amount: document.querySelector('div.budget > ul > li:nth-child(2)').innerText
+            },
           skills: [...document.querySelectorAll('ul#ctl00_guB_ucProjectDetail_ulSkills > li')]
             .map(skill => skill.innerText),
           employer: {

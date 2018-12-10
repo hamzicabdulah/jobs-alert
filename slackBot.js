@@ -82,7 +82,10 @@ module.exports = class SlackBot {
             },
             {
               title: 'Budget',
-              value: `- Type: ${jobDetails.budget.type}\n- Amount: ${jobDetails.budget.amount}`
+              value: jobDetails.budget.type === 'Hourly Pay' ?
+                `- Type: ${jobDetails.budget.type}\n- Number of Days: ${jobDetails.budget.daysNum}\n` +
+                `- Number of Hours: ${jobDetails.budget.hoursNum}\n- Rate: ${jobDetails.budget.rate}` :
+                `- Type: ${jobDetails.budget.type}\n- Amount: ${jobDetails.budget.amount}`
             },
             {
               title: 'Employer',
