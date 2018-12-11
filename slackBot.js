@@ -36,11 +36,19 @@ module.exports = class SlackBot {
     });
 
     this.bot.on('error', console.error);
-    this.bot.on('start', () => {
+    this.bot.on('start', async () => {
       console.log('Started Slack Bot.');
-      this.sendNewFreelancerJobs();
-      setInterval(() => this.sendNewFreelancerJobs(), 300000);
+      await this.sendNewJobs();
+      setInterval(() => this.sendNewJobs(), 300000);
     });
+  }
+
+  /**
+   * Send new jobs from each website synchronously
+   */
+  async sendNewJobs() {
+    await this.sendNewFreelancerJobs();
+    await this.sendNewGuruJobs();
   }
 
   /**
