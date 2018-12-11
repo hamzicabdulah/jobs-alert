@@ -184,11 +184,11 @@ module.exports = class SlackBot {
   }
 
   /**
-   * Select/unselect the categoryClicked in the database
+   * Select/unselect the given category in the database
    * Then edit the message with the given timestamp with the updated categories
    * 
    * @param {string} platform - Name of the website whose categories to change
-   * @param {string} channelId - The id of the channel the original message was sent in by sendGuruCategories()
+   * @param {string} channelId - The id of the channel the original message was sent in
    * @param {string} messageTimestamp - The timestamp of the original message
    * @param {string} categoryToUpdate - The category to select/unselect in the database
    */

@@ -4,7 +4,11 @@ require('dotenv').config({
   path: path.resolve(__dirname, '../.env')
 });
 const request = require('request-promise');
-const { getCategories, getLastJobProcessed } = require('../database');
+const {
+  getCategories,
+  getLastJobProcessed,
+  getKeywords
+} = require('../database');
 
 /** Constants */
 const platform = 'Freelancer';
@@ -24,13 +28,18 @@ module.exports = class Freelancer {
       console.log('No Freelancer categories selected yet.');
       return [];
     }
-
+    const keywords = await getKeywords(platform);
     const skills = await this.getSkills(selectedCategories);
-    const allJobs = (await this.apiGetRequest(
-      `/projects/0.1/projects/active?full_description=true&job_details=true&` +
-      `user_employer_reputation=true&limit=50&jobs[]=${skills.map(skill => skill.id).join(', ')}`,
-    )).result.projects;
 
+    let requestRoute =
+      `/projects/0.1/projects/active?full_description=true&job_details=true&` +
+      `user_employer_reputation=true&limit=50`;
+    if (keywords && keywords.length)
+      requestRoute += `&query=${keywords.map(keyword => keyword.value).join(' ')}&or_search_query=True`;
+    if (skills && skills.length)
+      requestRoute += `&jobs[]=${skills.map(skill => skill.id).join(', ')}`;
+
+    const allJobs = (await this.apiGetRequest(requestRoute)).result.projects;
     const lastJobProcessed = await getLastJobProcessed(platform);
     const newJobs = lastJobProcessed ? allJobs.filter(job => job.id > lastJobProcessed) : allJobs;
     console.log(newJobs.length ?
@@ -48,7 +57,7 @@ module.exports = class Freelancer {
    */
   async getSkills(categories) {
     return (await this.apiGetRequest(
-      `/projects/0.1/jobs?categories[]=${categories.map(category => category.id).join(', ')}`
+      `/projects/0.1/jobs?${categories.map(category => `categories[]=${category.id}`).join('&')}`
     )).result;
   }
 

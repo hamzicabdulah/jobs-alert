@@ -2,6 +2,7 @@
 
 const Category = require('../models/category');
 const LastJobProcessed = require('../models/lastJobProcessed');
+const Keyword = require('../models/keyword');
 
 /**
  * Get all the categories saved in the database for the given platform
@@ -122,7 +123,7 @@ async function updateCategories(platform, categories) {
  * @returns {Object} - Added category document with all of its data
  */
 function addCategory(platform, category) {
-  console.log(`Adding a new ${platform} category to database: ${category.name}`);
+  console.log(`Adding a new ${platform} category to the database: ${category.name}`);
 
   return new Promise((resolve, reject) => {
     const newCategory = new Category({
@@ -137,11 +138,66 @@ function addCategory(platform, category) {
   });
 }
 
+/**
+ * Get all the keywords saved in the database for the given platform
+ * 
+ * @param {string} platform - Name of the website whose keywords need to be returned
+ * @returns {Object[]} - All keyword objects with 2 properties: platform and value
+ */
+function getKeywords(platform) {
+  return new Promise((resolve, reject) => {
+    Keyword.find({ platform }, (err, keywords) => {
+      if (err) return reject(err);
+      if (!keywords || !keywords.length)
+        return reject(`No ${platform} keywords available.`);
+      resolve(keywords);
+    });
+  });
+}
+
+/**
+ * Add a new keyword to the database that belongs to the given platform
+ * 
+ * @param {string} platform - Name of the website the keyword is to be added to
+ * @param {string} keyword
+ * @returns {Object} - Added keyword document with its 2 properties: platform and value
+ */
+function addKeyword(platform, keyword) {
+  console.log(`Adding a new ${platform} keyword to the database: ${keyword}`);
+
+  return new Promise((resolve, reject) => {
+    const newKeyword = new Keyword({ platform, value: keyword });
+    newKeyword.save((err, document) => {
+      if (err) return reject(err);
+      console.log('Keyword successfully added.');
+      resolve(document);
+    });
+  });
+}
+
+/**
+ * Remove a keyword from the database that belongs to the given platform
+ * 
+ * @param {string} platform - Name of the website the keyword is to be removed from
+ * @param {string} keyword
+ */
+function removeKeyword(platform, keyword) {
+  console.log(`Removing ${platform} keyword from the database: ${keyword}`);
+
+  Keyword.deleteOne({ platform, value: keyword }, err => {
+    if (err) return reject(err);
+    console.log('Keyword successfully removed.');
+    resolve();
+  });
+}
 
 module.exports = {
   getCategories,
   getLastJobProcessed,
   updateLastJobProcessed,
   flipCategorySelection,
-  updateCategories
+  updateCategories,
+  getKeywords,
+  addKeyword,
+  removeKeyword
 };
