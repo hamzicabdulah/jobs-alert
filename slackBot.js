@@ -3,8 +3,18 @@ const SlackBotAPI = require('slackbots');
 require('dotenv').config({});
 const request = require('request-promise');
 const Guru = require('./platforms/guru.js');
+const Freelancer = require('./platforms/freelancer.js');
+const {
+  getCategories,
+  updateLastJobProcessed,
+  flipCategorySelection
+} = require('./database');
+const { USDFormat } = require('./utils');
 
-const guruIconUrl = 'https://goo.gl/ewa9YG';
+const platformIconUrls = {
+  guru: 'https://goo.gl/ewa9YG',
+  freelancer: 'https://goo.gl/jwm6ep'
+};
 
 
 /** jobsalert Slack bot */
@@ -28,8 +38,8 @@ module.exports = class SlackBot {
     this.bot.on('error', console.error);
     this.bot.on('start', () => {
       console.log('Started Slack Bot.');
-      this.sendNewGuruJobs();
-      setInterval(() => this.sendNewGuruJobs(), 300000);
+      this.sendNewFreelancerJobs();
+      setInterval(() => this.sendNewFreelancerJobs(), 300000);
     });
   }
 
@@ -51,7 +61,7 @@ module.exports = class SlackBot {
       await guru.endNightmare();
 
       if (newJobs.length) {
-        await guru.updateLastJobProcessed(newJobs[0]);
+        await updateLastJobProcessed('Guru', newJobs[0]);
 
         console.log('Sending new Guru jobs.');
         newJobs.reverse().forEach(job => this.sendGuruJob(job));
@@ -65,13 +75,13 @@ module.exports = class SlackBot {
   }
 
   /**
-   * Send a formatted message on Slack with the given jobDetails
+   * Send a formatted message on Slack with the given jobDetails (Guru job)
    * 
    * @param {Object} jobDetails - All the job data
    */
   sendGuruJob(jobDetails) {
     const params = {
-      icon_url: guruIconUrl,
+      icon_url: platformIconUrls.guru,
       username: 'Guru',
       attachments: [
         {
@@ -114,21 +124,23 @@ module.exports = class SlackBot {
   }
 
   /**
-   * Send a message on Slack with the categories the user has previously selected
+   * Send a message on Slack with the categories from the given platform/website 
+   * that the user has previously selected
    * Allow the user to select/unselect categories via pressing buttons
+   * 
+   * @param {string} platform - Name of the website whose categories to change
    */
-  async sendGuruCategories() {
-    console.log('Sending Guru categories.');
+  async sendCategories(platform) {
+    console.log(`Sending ${platform} categories.`);
 
     try {
-      const guru = new Guru();
-      const categories = await guru.getCategories();
-      const params = this.getGuruCategoriesMessageParams(categories);
+      const categories = await getCategories(platform);
+      const params = this.getCategoriesMessageParams(platform, categories);
       this.bot.postMessageToChannel(process.env.SLACK_CHANNEL_NAME, '', params);
-      console.log('Successfully sent Guru categories.');
+      console.log(`Successfully sent ${platform} categories.`);
     } catch (err) {
-      console.error(`Something went wrong while trying to send Guru categories. Error received: ${err}`);
-      this.sendErrorMessage();
+      console.error(`Something went wrong while trying to send ${platform} categories. Error received: ${err}`);
+      this.sendErrorMessage(platform);
     }
   }
 
@@ -136,25 +148,26 @@ module.exports = class SlackBot {
    * Return formatted Slack message params for the database categories
    * This function is used by sendGuruCategories() and updateGuruCategories()
    * 
+   * @param {string} platform - Name of the website whose categories to change
    * @param {Object[]} categories - All Guru categories with name, platform, href and selected properties
    * @returns {Object} - Formatted Slack message params
    */
-  getGuruCategoriesMessageParams(categories) {
+  getCategoriesMessageParams(platform, categories) {
     return {
-      icon_url: guruIconUrl,
-      username: 'Guru',
+      icon_url: platformIconUrls[platform.toLowerCase()],
+      username: platform,
       text: 'Click on a category to select/unselect it.',
       attachments: categories.map(category => {
         return {
           title: '',
           color: '#fff',
-          callback_id: 'guru_category',
+          callback_id: `${platform.toLowerCase()}_category`,
           actions: [
             {
               name: category.name,
               text: `${category.name} ${category.selected ? '✔' : ''}`,
               type: 'button',
-              value: category.href
+              value: category.href || category.id
             }
           ]
         };
@@ -166,31 +179,38 @@ module.exports = class SlackBot {
    * Select/unselect the categoryClicked in the database
    * Then edit the message with the given timestamp with the updated categories
    * 
+   * @param {string} platform - Name of the website whose categories to change
    * @param {string} channelId - The id of the channel the original message was sent in by sendGuruCategories()
    * @param {string} messageTimestamp - The timestamp of the original message
    * @param {string} categoryToUpdate - The category to select/unselect in the database
    */
-  async flipGuruCategorySelection(channelId, messageTimestamp, categoryToUpdate) {
+  async flipCategorySelectionSlack(
+    platform,
+    channelId,
+    messageTimestamp,
+    categoryToUpdate
+  ) {
     try {
-      const guru = new Guru();
-      await guru.flipCategorySelection(categoryToUpdate);
-      const categories = await guru.getCategories();
+      await flipCategorySelection(platform, categoryToUpdate);
+      const categories = await getCategories(platform);
 
-      const params = this.getGuruCategoriesMessageParams(categories);
+      const params = this.getCategoriesMessageParams(platform, categories);
       this.bot.updateMessage(channelId, messageTimestamp, '', params);
     } catch (err) {
       console.error(err);
-      this.sendErrorMessage();
+      this.sendErrorMessage(platform);
     }
   }
 
   /**
    * Notify the Slack user(s) that something went wrong
+   * 
+   * @param {string} botUsername - Name of the website/platform that things went wrong with
    */
-  sendErrorMessage() {
+  sendErrorMessage(botUsername) {
     const params = {
-      icon_url: guruIconUrl,
-      username: 'Guru'
+      icon_url: platformIconUrls[platform.toLowerCase()],
+      username: platform
     };
 
     this.bot.postMessageToChannel(
@@ -200,44 +220,76 @@ module.exports = class SlackBot {
     );
   }
 
+
   /**
-   * Interact with the user and apply to a Guru job
-   * 
-   * @param {string} jobUrl - The URL of the job to apply to
-   * @param {string} triggerId - Required for the API request
+   * Get data about every new job posted on Freelancer
+   * And send a message on Slack for each one of those jobs
    */
-  /* guruApply(jobUrl, triggerId) {
-    const requestBody = {
-      trigger_id: triggerId,
-      dialog: {
-        callback_id: 'guru_apply',
-        title: 'Apply',
-        submit_label: 'Apply',
-        notify_on_cancel: true,
-        state: 'Limo',
-        elements: [
-          {
-            label: 'Billing based on',
-            type: 'select',
-            name: 'billing',
-            options: [
-              {
-                label: 'Hourly by Time Tracked',
-                value: 'QUOTES.SUBMIT.lblHourly'
-              },
-              {
-                label: 'Fixed Price by Milestone',
-                value: 'QUOTES.SUBMIT.lblFixedPrice'
-              }
-            ]
-          }
-        ]
+  async sendNewFreelancerJobs() {
+    const freelancer = new Freelancer();
+    try {
+      const newJobs = await freelancer.getNewJobs();
+      if (newJobs.length) {
+        await updateLastJobProcessed('Freelancer', newJobs[0]);
+
+        console.log('Sending new Freelancer jobs.');
+        newJobs.reverse().forEach(job => this.sendFreelancerJob(job));
+        console.log('Successfully sent new Freelancer jobs.');
       }
+    } catch (err) {
+      console.error(`Something went wrong while sending new Freelancer jobs. Error received: ${err}`);
+      return this.sendNewFreelancerJobs();
+    }
+  }
+
+
+  /**
+   * Send a formatted message on Slack with the given jobDetails (Freelancer job)
+   * 
+   * @param {Object} jobDetails - All the job data
+   */
+  sendFreelancerJob(jobDetails) {
+    const freelancerBaseUrl = 'https://www.freelancer.com/projects';
+    const params = {
+      icon_url: platformIconUrls.freelancer,
+      username: 'Freelancer',
+      attachments: [
+        {
+          fallback: jobDetails.title,
+          color: '#36a64f',
+          title: jobDetails.title.toUpperCase(),
+          title_link: `${freelancerBaseUrl}/${jobDetails.seo_url}`,
+          fields: [
+            {
+              title: 'Description',
+              value: jobDetails.description
+            },
+            {
+              title: 'Budget',
+              value: `- Minimum: ${USDFormat(jobDetails.budget.minimum)}\n` +
+                `- Maximum: ${USDFormat(jobDetails.budget.maximum)}\n`
+            },
+            {
+              title: 'Bids Statistics',
+              value: `- Bids Count: ${jobDetails.bid_stats.bid_count}` +
+                (jobDetails.bid_stats.bid_count ?
+                  `\n- Average Bid: ${USDFormat(jobDetails.bid_stats.bid_avg)}` : '')
+            }
+          ],
+          callback_id: 'freelancer_job',
+          actions: [
+            {
+              type: 'button',
+              text: 'Open In Browser',
+              url: `${freelancerBaseUrl}/${jobDetails.seo_url}`
+            }
+          ]
+        }
+      ]
     };
 
-    this.apiRequest('/dialog.open', requestBody)
-      .catch(console.error);
-  } */
+    this.bot.postMessageToChannel(process.env.SLACK_CHANNEL_NAME, '', params);
+  }
 
   /**
    * 

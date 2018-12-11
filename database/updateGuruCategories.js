@@ -1,6 +1,6 @@
 const Guru = require('../platforms/guru');
-const guru = new Guru();
-const mongooseStart = require('../config/mongooseStart');
+const mongooseStart = require('./mongooseStart');
+const { updateCategories } = require('.');
 
 /**
  * Fetch categories from Guru's website and save them to the database
@@ -8,11 +8,12 @@ const mongooseStart = require('../config/mongooseStart');
 (async function () {
   try {
     mongooseStart();
+    const guru = new Guru();
     guru.startNightmare();
     const categories = await guru.fetchCategoriesFromGuru();
     await guru.endNightmare();
-    guru.updateCategories(categories);
+    updateCategories('Guru', categories);
   } catch (err) {
-    console.error('Something went wrong while updated the Guru categories in the database.');
+    console.error('Something went wrong while updating the Guru categories in the database.');
   }
 })();

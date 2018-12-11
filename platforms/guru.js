@@ -4,16 +4,14 @@ const Nightmare = require('nightmare');
 require('dotenv').config({
   path: path.resolve(__dirname, '../.env')
 });
-const LastJobProcessed = require('../models/lastJobProcessed');
-const Category = require('../models/category');
+const { getCategories, getLastJobProcessed } = require('../database');
 
 /** Constants */
+const platform = 'Guru';
 const guruBaseUrl = 'https://www.guru.com';
-const guruDatabaseQuery = { platform: 'Guru' }
 
 /** Class containing any code related to Guru */
 module.exports = class Guru {
-
   /**
    * Create a new instance of Nightmare
    */
@@ -90,7 +88,7 @@ module.exports = class Guru {
   async getAllJobUrls() {
     console.log('Getting Guru job URLs.');
 
-    const categories = await this.getCategories();
+    const categories = await getCategories(platform);
 
     return this.nightmare
       .goto(`${guruBaseUrl}/d/jobs`)
@@ -110,22 +108,6 @@ module.exports = class Guru {
   }
 
   /**
-   * Get all Guru categories saved in the Mongo database
-   * 
-   * @returns {Object[]} - All Guru categories with their name, href, platform and selected properties
-   */
-  getCategories() {
-    return new Promise((resolve, reject) => {
-      Category.find(guruDatabaseQuery,
-        (err, categories) => {
-          if (err) return reject(err);
-          if (!categories || !categories.length) return reject('No Guru categories available.');
-          resolve(categories);
-        });
-    });
-  }
-
-  /**
    * Given the URLs of all the jobs to be processed,
    * return data only for the jobs that the user hasn't yet been notified about
    * 
@@ -141,7 +123,6 @@ module.exports = class Guru {
       newJobs.push(await this.getJobDetails(newJobUrls[i]));
     }
 
-
     console.log(newJobs.length ?
       'Successfully fetched data for all new Guru jobs.' :
       'No new Guru jobs.');
@@ -156,53 +137,13 @@ module.exports = class Guru {
    * @returns {string[]} - Array of the URLs of the new Guru jobs only
    */
   async getNewJobUrls(allJobUrls) {
-    const lastJobProcessed = await this.getLastJobProcessed();
+    const lastJobProcessed = await getLastJobProcessed(platform);
     const newJobUrls = [];
     allJobUrls.every(jobLink => {
-      if (!lastJobProcessed || !jobLink.includes(lastJobProcessed)) {
-        newJobUrls.push(jobLink);
-        return true;
-      }
+      if (!lastJobProcessed || !jobLink.includes(lastJobProcessed))
+        return newJobUrls.push(jobLink);
     });
     return newJobUrls;
-  }
-
-  /**
-   * Get the id of the last job that the user has been notified about
-   * 
-   * @returns {string} - Id of the last job that the user has been notified about
-   */
-  getLastJobProcessed() {
-    return new Promise((resolve, reject) => {
-      LastJobProcessed.findOne(guruDatabaseQuery, (err, lastJobProcessed) => {
-        if (err) return reject(err);
-        if (!lastJobProcessed) return resolve('');
-        resolve(lastJobProcessed.jobId);
-      });
-    });
-  }
-
-  /**
-   * Given the data for the last Guru job, 
-   * set its id as the value for lastJobSent in database.json
-   * 
-   * @param {Object} lastJob - Data for the last job posted on Guru
-   * @returns {Object} - Updated LastJobProcessed
-   */
-  updateLastJobProcessed(lastJob) {
-    return new Promise((resolve, reject) => {
-      LastJobProcessed.updateOne(guruDatabaseQuery, {
-        ...guruDatabaseQuery,
-        jobId: lastJob.id
-      }, {
-          upsert: true,
-          setDefaultsOnInsert: true
-        }, (err, lastJobProcessed) => {
-          if (err) return reject(err);
-          resolve(lastJobProcessed);
-        }
-      );
-    });
   }
 
   /**
@@ -248,32 +189,8 @@ module.exports = class Guru {
    * Destroy the previously created Nightmare instance
    */
   endNightmare() {
-    console.log('Closed Nightmare');
+    console.log('Closed Nightmare.');
     return this.nightmare.end();
-  }
-
-  /**
-   * Update the selected property of the category with the given categoryName
-   * The user will only get notified for jobs from the selected categories
-   * 
-   * @param {string} categoryName - The name of the category to select/unselect
-   */
-  flipCategorySelection(categoryName) {
-    return new Promise((resolve, reject) => {
-      Category.findOne({
-        ...guruDatabaseQuery,
-        href: categoryName
-      }, (err, category) => {
-        if (err) return reject(err);
-        if (!category) return reject();
-        category.selected = !category.selected;
-        category.save(err => {
-          if (err) return reject(err);
-          console.log(`Successfully (un)selected Guru category: ${categoryName}`);
-          resolve(category);
-        });
-      });
-    });
   }
 
   /**
@@ -298,50 +215,5 @@ module.exports = class Guru {
         console.log('Successfully fetched categories from Guru.');
         return categories;
       });
-  }
-
-  /**
-   * Update the categories in the database
-   * 
-   * @param {Object[]} categories - Array of categories with their names and hrefs
-   */
-  updateCategories(categories) {
-    console.log('Updating Guru categories in database.');
-
-    Category.find(guruDatabaseQuery, (_err, existingCategories) => {
-      Category.deleteMany(guruDatabaseQuery, async _err => {
-        for (let i = 0; i < categories.length; i++) {
-          const category = categories[i];
-          const existingCategory = existingCategories.find(existingCategory => {
-            return category.name === existingCategory.name;
-          });
-          if (existingCategory) category.selected = existingCategory.selected;
-          await this.addCategory(category);
-        }
-
-        console.log('Successfully updated Guru categories in database.');
-      });
-    });
-  }
-
-  /**
-   * Add a new Guru category to the database
-   * 
-   * @param {Object} category - Guru category with its name and href (and maybe selected property)
-   */
-  addCategory(category) {
-    console.log(`Adding a new Guru category to database: ${category.name}`);
-
-    return new Promise((resolve, reject) => {
-      const newCategory = new Category({
-        ...category,
-        ...guruDatabaseQuery
-      });
-      newCategory.save((err, document) => {
-        if (err) return reject(err);
-        console.log('Category successfully added.');
-        resolve(document);
-      });
-    });
   }
 }

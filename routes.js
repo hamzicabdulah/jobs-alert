@@ -1,18 +1,17 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const urlencodedParser = bodyParser.urlencoded({ extended: false })
-const guruRouter = express.Router();
+const categoriesRouter = express.Router();
+const { capitalize } = require('./utils');
 
 module.exports = function (app, slackBot) {
-  guruRouter.post('/categories', urlencodedParser, (req, res) => {
+  app.post('/categories/:platform', urlencodedParser, (req, res) => {
     if (req.body.token !== process.env.SLACK_VERIFICATION_TOKEN)
       return res.status(403).end('Access forbidden');
 
     res.status(200).end();
-    slackBot.sendGuruCategories();
+    slackBot.sendCategories(capitalize(req.params.platform));
   });
-
-  app.use('/guru', guruRouter);
 
   app.post('/action', urlencodedParser, (req, res) => {
     const payload = JSON.parse(req.body.payload);
@@ -20,19 +19,13 @@ module.exports = function (app, slackBot) {
       return res.status(403).end('Access forbidden');
     res.status(200).end();
 
-    switch (payload.callback_id) {
-      case 'guru_category':
-        slackBot.flipGuruCategorySelection(
-          payload.channel.id,
-          payload.original_message.ts,
-          payload.actions[0].value
-        );
-        break;
+    const platform = capitalize(payload.callback_id).split('_')[0];
 
-      case 'guru_job':
-        if (payload.actions[0].name === 'apply')
-          slackBot.guruApply(payload.actions[0].value, payload.trigger_id);
-        break;
-    };
+    slackBot.flipCategorySelectionSlack(
+      platform,
+      payload.channel.id,
+      payload.original_message.ts,
+      payload.actions[0].value
+    );
   });
 }

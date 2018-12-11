@@ -10,8 +10,10 @@ module.exports = mongoose.model('categories', new mongoose.Schema({
     required: true
   },
   href: {
-    type: String,
-    required: true
+    type: String
+  },
+  id: {
+    type: String
   },
   selected: {
     type: Boolean,

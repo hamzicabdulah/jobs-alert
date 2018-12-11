@@ -1,7 +1,7 @@
 /** Imports */
 const express = require('express');
 const SlackBot = require('./slackBot');
-const mongooseStart = require('./config/mongooseStart');
+const mongooseStart = require('./database/mongooseStart');
 const routes = require('./routes');
 
 const app = express();
