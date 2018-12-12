@@ -7,7 +7,8 @@ const Freelancer = require('./platforms/freelancer.js');
 const {
   getCategories,
   updateLastJobProcessed,
-  flipCategorySelection
+  flipCategorySelection,
+  getKeywords
 } = require('./database');
 const { USDFormat } = require('./utils');
 
@@ -213,9 +214,9 @@ module.exports = class SlackBot {
   /**
    * Notify the Slack user(s) that something went wrong
    * 
-   * @param {string} botUsername - Name of the website/platform that things went wrong with
+   * @param {string} platform - Name of the website that things went wrong with
    */
-  sendErrorMessage(botUsername) {
+  sendErrorMessage(platform) {
     const params = {
       icon_url: platformIconUrls[platform.toLowerCase()],
       username: platform
@@ -297,6 +298,45 @@ module.exports = class SlackBot {
     };
 
     this.bot.postMessageToChannel(process.env.SLACK_CHANNEL_NAME, '', params);
+  }
+
+
+  /**
+   * Open a Slack dialog which shows the previously selected keywords for the given platforms
+   * and also lets the user remove any keywords or add new ones
+   * 
+   * @param {string} platform - Name of the website whose keywords to send
+   * @param {string} triggerId - Required for the API request
+   */
+  async sendKeywords(platform, triggerId) {
+    try {
+      console.log(`Sending ${platform} keywords.`);
+      const selectedKeywords = await getKeywords(platform);
+      const requestBody = {
+        trigger_id: triggerId,
+        dialog: {
+          callback_id: `${platform.toLowerCase()}_keywords`,
+          title: `${platform} Keywords`,
+          submit_label: 'Save',
+          state: 'Limo',
+          elements: [
+            {
+              label: 'Selected Keywords',
+              name: 'keywords',
+              type: 'textarea',
+              placeholder: 'you@example.com',
+              value: selectedKeywords.map(keyword => keyword.value).join(', '),
+              optional: true
+            }
+          ]
+        }
+      };
+      await this.apiRequest('/dialog.open', requestBody);
+      console.log(`Successfully sent ${platform} keywords.`);
+    } catch (err) {
+      console.error(err);
+      this.sendErrorMessage(platform);
+    }
   }
 
   /**

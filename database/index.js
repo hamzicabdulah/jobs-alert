@@ -148,11 +148,32 @@ function getKeywords(platform) {
   return new Promise((resolve, reject) => {
     Keyword.find({ platform }, (err, keywords) => {
       if (err) return reject(err);
-      if (!keywords || !keywords.length)
-        return reject(`No ${platform} keywords available.`);
       resolve(keywords);
     });
   });
+}
+
+/**
+ * Update the selected keywords for the given platform
+ * 
+ * @param {*} platform - Name of the website the keyword is to be added to
+ * @param {*} keywords - Updated keywords
+ */
+async function updateKeywords(platform, keywords) {
+  console.log(`Updating ${platform} keywords in the database.`);
+
+  const newKeywords = !keywords || !keywords.length ?
+    [] : keywords.split(',').map(keyword => keyword.trim());
+  const previousKeywords = (await getKeywords(platform)).map(keyword => keyword.value);
+  const keywordsToAdd = newKeywords.filter(keyword => !previousKeywords.includes(keyword));
+  const keywordsToRemove = previousKeywords.filter(keyword => !newKeywords.includes(keyword));
+
+  for (let i = 0; i < keywordsToRemove.length; i++)
+    await removeKeyword(platform, keywordsToRemove[i]);
+  for (let i = 0; i < keywordsToAdd.length; i++)
+    await addKeyword(platform, keywordsToAdd[i]);
+
+  console.log(`Successfully updated ${platform} keywords.`);
 }
 
 /**
@@ -182,12 +203,14 @@ function addKeyword(platform, keyword) {
  * @param {string} keyword
  */
 function removeKeyword(platform, keyword) {
-  console.log(`Removing ${platform} keyword from the database: ${keyword}`);
+  return new Promise((resolve, reject) => {
+    console.log(`Removing ${platform} keyword from the database: ${keyword}`);
 
-  Keyword.deleteOne({ platform, value: keyword }, err => {
-    if (err) return reject(err);
-    console.log('Keyword successfully removed.');
-    resolve();
+    Keyword.deleteOne({ platform, value: keyword }, err => {
+      if (err) return reject(err);
+      console.log('Keyword successfully removed.');
+      resolve();
+    });
   });
 }
 
@@ -198,6 +221,5 @@ module.exports = {
   flipCategorySelection,
   updateCategories,
   getKeywords,
-  addKeyword,
-  removeKeyword
+  updateKeywords
 };
