@@ -79,7 +79,6 @@ module.exports = class SlackBot {
     } catch (err) {
       console.error(`Something went wrong while sending new Guru jobs. Error received: ${err}`);
       await guru.endNightmare();
-      return this.sendNewGuruJobs();
     }
   }
 
